@@ -90,36 +90,30 @@ class MMapRingBuffer:
             file.seek(0)
             file.write(HEADER_STRUCT.pack(0, 0))
 
-    def _get_indices(self):
-        self.mm.seek(0)
+    def _get_write_index(self):
+        return struct.unpack_from("<Q", self.mm, 0)[0]
 
-        header = self.mm.read(HEADER_SIZE)
+    def _get_read_index(self):
+        return struct.unpack_from("<Q", self.mm, 8)[0]
 
-        return HEADER_STRUCT.unpack(header)
+    def _set_write_index(self, value):
+        struct.pack_into("<Q", self.mm, 0, value)
 
-    def _set_indices(self, write_index, read_index):
-        self.mm.seek(0)
+    def _set_read_index(self, value):
+        struct.pack_into("<Q", self.mm, 8, value)
 
-        self.mm.write(
-            HEADER_STRUCT.pack(
-                write_index,
-                read_index,
-            )
-        )
 
     def is_empty(self):
-        write_index, read_index = self._get_indices()
-
-        return write_index == read_index
+        return self._get_write_index() == self._get_read_index()
 
     def is_full(self):
-        write_index, read_index = self._get_indices()
-
+        write_index = self._get_write_index()
+        read_index = self._get_read_index()
         return (write_index - read_index) >= self.capacity
 
     def size(self):
-        write_index, read_index = self._get_indices()
-
+        write_index = self._get_write_index()
+        read_index = self._get_read_index()
         return write_index - read_index
 
     def write_order(
@@ -129,18 +123,14 @@ class MMapRingBuffer:
         price,
         quantity,
         timestamp,
-    ):
-        """
-        Write one order directly into the mmap region.
-        """
-
-        write_index, read_index = self._get_indices()
+):
+        write_index = self._get_write_index()
+        read_index = self._get_read_index()
 
         if (write_index - read_index) >= self.capacity:
-            return False
+           return False
 
         slot = write_index % self.capacity
-
         offset = HEADER_SIZE + (slot * ORDER_SIZE)
 
         order_data = pack_order(
@@ -149,42 +139,32 @@ class MMapRingBuffer:
             price,
             quantity,
             timestamp,
-        )
+       )
 
         self.mm[offset : offset + ORDER_SIZE] = order_data
 
-        self._set_indices(
-            write_index + 1,
-            read_index,
-        )
+    # Producer owns only the write index.
+        self._set_write_index(write_index + 1)
 
         return True
 
     def read_order(self):
-        """
-        Read one order directly from the mmap region.
-        """
-
-        write_index, read_index = self._get_indices()
+        write_index = self._get_write_index()
+        read_index = self._get_read_index()
 
         if write_index == read_index:
-            return None
+           return None
 
         slot = read_index % self.capacity
-
         offset = HEADER_SIZE + (slot * ORDER_SIZE)
 
         order_data = self.mm[offset : offset + ORDER_SIZE]
-
         order = unpack_order(order_data)
 
-        self._set_indices(
-            write_index,
-            read_index + 1,
-        )
+    # Consumer owns only the read index.
+        self._set_read_index(read_index + 1)
 
         return order
-
     def close(self):
         """
         Close mmap and backing file.
