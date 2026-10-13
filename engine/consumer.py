@@ -2,6 +2,7 @@
 import os
 import time
 
+from storage.trade_ledger import TradeLedger
 from ipc.ring_buffer import MMapRingBuffer
 from engine.matching_engine import MatchingEngine
 
@@ -29,6 +30,10 @@ def main():
     )
 
     engine = MatchingEngine()
+    ledger = TradeLedger("storage/chronosmatch.db")
+    ledger.start()
+
+    print("SQLite Trade Ledger initialized successfully.")
 
     print("\nConnected to mmap ring buffer.")
     print("Cython Matching Engine initialized successfully.")
@@ -99,6 +104,9 @@ def main():
             if trades:
                 total_trades += len(trades)
                 last_trade = trades[-1]
+
+                for trade in trades:
+                    ledger.record_trade(trade)
 
             if total_orders % REPORT_INTERVAL == 0:
                 elapsed = time.perf_counter() - start_time
@@ -186,7 +194,9 @@ def main():
         print(f"Engine Stats     : {engine.stats()}")
         print(f"Best Bid         : {engine.best_bid()}")
         print(f"Best Ask         : {engine.best_ask()}")
-
+        
+        ledger.close()
+        print(f"SQLite Trades Saved : {ledger.saved_count:,}")
         buffer.close()
 
 
