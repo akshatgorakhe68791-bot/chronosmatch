@@ -23,8 +23,8 @@ cdef struct CTrade:
 
 cdef class MatchingEngine:
 
-    cdef COrder bids[10000]
-    cdef COrder asks[10000]
+    cdef COrder bids[100000]
+    cdef COrder asks[100000]
 
     cdef int bid_count
     cdef int ask_count
@@ -169,7 +169,7 @@ cdef class MatchingEngine:
 
             if incoming.quantity > 0:
 
-                if self.bid_count >= 10000:
+                if self.bid_count >= 100000:
                     raise OverflowError("Bid book capacity exceeded")
 
                 self.bids[self.bid_count] = incoming
@@ -212,7 +212,7 @@ cdef class MatchingEngine:
 
             if incoming.quantity > 0:
 
-                if self.ask_count >= 10000:
+                if self.ask_count >= 100000:
                     raise OverflowError("Ask book capacity exceeded")
 
                 self.asks[self.ask_count] = incoming

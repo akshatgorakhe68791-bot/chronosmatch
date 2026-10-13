@@ -1,23 +1,26 @@
+
 import os
 import time
 
 from ipc.ring_buffer import MMapRingBuffer
+from engine.matching_engine import MatchingEngine
 
 
 BUFFER_FILE = "chronosmatch_ring.dat"
 CAPACITY = 65536
+REPORT_INTERVAL = 10000
 
 
 def main():
-    print("=" * 60)
-    print("       ChronosMatch LIVE Engine Consumer")
-    print("=" * 60)
+    print("=" * 65)
+    print("       ChronosMatch LIVE Cython Matching Engine")
+    print("=" * 65)
 
-    print(f"PID: {os.getpid()}")
-    print("Waiting for shared mmap buffer...")
+    print(f"Consumer PID : {os.getpid()}")
+    print("Waiting for mmap ring buffer...")
 
     while not os.path.exists(BUFFER_FILE):
-        time.sleep(0.1)
+        time.sleep(0.05)
 
     buffer = MMapRingBuffer(
         path=BUFFER_FILE,
@@ -25,14 +28,22 @@ def main():
         create=False,
     )
 
-    print("Connected to shared mmap buffer.")
-    print("Reading live orders...")
+    engine = MatchingEngine()
+
+    print("\nConnected to mmap ring buffer.")
+    print("Cython Matching Engine initialized successfully.")
+    print("Processing LIVE market orders...")
     print("Press Ctrl+C to stop.\n")
 
     total_orders = 0
+    total_trades = 0
     total_latency_ns = 0
+
     min_latency_ns = None
     max_latency_ns = 0
+
+    total_matching_ns = 0
+    last_trade = None
 
     start_time = time.perf_counter()
 
@@ -41,16 +52,17 @@ def main():
             order = buffer.read_order()
 
             if order is None:
-                time.sleep(0)
+                time.sleep(0.0001)
                 continue
 
-            exit_timestamp = time.perf_counter_ns()
-
-            latency_ns = (
-                exit_timestamp - order["timestamp"]
+            # End-to-end latency includes time spent waiting
+            # inside the shared ring buffer.
+            receive_ns = time.perf_counter_ns()
+            latency_ns = max(
+                0,
+                receive_ns - order["timestamp"]
             )
 
-            total_orders += 1
             total_latency_ns += latency_ns
 
             if min_latency_ns is None:
@@ -58,61 +70,123 @@ def main():
             else:
                 min_latency_ns = min(
                     min_latency_ns,
-                    latency_ns,
+                    latency_ns
                 )
 
             max_latency_ns = max(
                 max_latency_ns,
-                latency_ns,
+                latency_ns
             )
 
-            elapsed = time.perf_counter() - start_time
+            # Measure Cython matching call separately.
+            matching_start_ns = time.perf_counter_ns()
 
-            throughput = (
-                total_orders / elapsed
-                if elapsed > 0
-                else 0
+            trades = engine.add_order(
+                order["order_id"],
+                order["side"],
+                order["price"],
+                order["quantity"],
             )
 
-            avg_latency_us = (
-                total_latency_ns
-                / total_orders
-                / 1000
+            matching_end_ns = time.perf_counter_ns()
+
+            total_matching_ns += (
+                matching_end_ns - matching_start_ns
             )
 
-            print(
-                f"\rConsumed: {total_orders:,} | "
-                f"Last ID: {order['order_id']:,} | "
-                f"{order['side']} "
-                f"${order['price']:.2f} "
-                f"x {order['quantity']} | "
-                f"Latency: {latency_ns / 1000:.2f} us | "
-                f"Avg: {avg_latency_us:.2f} us | "
-                f"Rate: {throughput:,.0f}/sec",
-                end="",
-                flush=True,
-            )
+            total_orders += 1
+
+            if trades:
+                total_trades += len(trades)
+                last_trade = trades[-1]
+
+            if total_orders % REPORT_INTERVAL == 0:
+                elapsed = time.perf_counter() - start_time
+
+                throughput = (
+                    total_orders / elapsed
+                    if elapsed > 0 else 0
+                )
+
+                avg_latency_us = (
+                    total_latency_ns / total_orders / 1000
+                )
+
+                avg_matching_us = (
+                    total_matching_ns / total_orders / 1000
+                )
+
+                stats = engine.stats()
+
+                print("=" * 65)
+                print("          CHRONOSMATCH LIVE STATISTICS")
+                print("=" * 65)
+
+                print(f"Orders Processed : {total_orders:,}")
+                print(f"Trades Executed  : {total_trades:,}")
+                print(f"Throughput       : {throughput:,.0f} orders/sec")
+                print(f"Buffer Depth     : {buffer.size():,}")
+
+                print(f"Average E2E      : {avg_latency_us:,.2f} us")
+                print(f"Minimum E2E      : {min_latency_ns / 1000:,.2f} us")
+                print(f"Maximum E2E      : {max_latency_ns / 1000:,.2f} us")
+
+                print(f"Avg Cython Match : {avg_matching_us:,.2f} us")
+
+                print(f"Best Bid         : {engine.best_bid()}")
+                print(f"Best Ask         : {engine.best_ask()}")
+
+                print(
+                    f"Order Book       : "
+                    f"{stats['bids']} bids / "
+                    f"{stats['asks']} asks"
+                )
+
+                if last_trade:
+                    print(
+                        f"Last Trade       : "
+                        f"BUY {last_trade['buy_order_id']} / "
+                        f"SELL {last_trade['sell_order_id']} | "
+                        f"{last_trade['quantity']} @ "
+                        f"${last_trade['price']:.2f}"
+                    )
+
+                print("=" * 65)
 
     except KeyboardInterrupt:
         print("\n\nConsumer stopped.")
 
-        if total_orders:
-            print("\n--- Session Statistics ---")
-            print(f"Orders     : {total_orders:,}")
+    finally:
+        elapsed = time.perf_counter() - start_time
+
+        print("\n" + "=" * 65)
+        print("          FINAL SESSION STATISTICS")
+        print("=" * 65)
+
+        print(f"Total Orders     : {total_orders:,}")
+        print(f"Total Trades     : {total_trades:,}")
+
+        if elapsed > 0:
             print(
-                f"Average    : "
-                f"{total_latency_ns / total_orders / 1000:.2f} us"
-            )
-            print(
-                f"Minimum    : "
-                f"{min_latency_ns / 1000:.2f} us"
-            )
-            print(
-                f"Maximum    : "
-                f"{max_latency_ns / 1000:.2f} us"
+                f"Throughput       : "
+                f"{total_orders / elapsed:,.0f} orders/sec"
             )
 
-    finally:
+        if total_orders > 0:
+            print(
+                f"Average E2E      : "
+                f"{total_latency_ns / total_orders / 1000:,.2f} us"
+            )
+
+            print(
+                f"Avg Cython Match : "
+                f"{total_matching_ns / total_orders / 1000:,.2f} us"
+            )
+
+        print(f"Engine Stats     : {engine.stats()}")
+        print(f"Best Bid         : {engine.best_bid()}")
+        print(f"Best Ask         : {engine.best_ask()}")
+
         buffer.close()
 
 
