@@ -5,11 +5,13 @@ import time
 from storage.trade_ledger import TradeLedger
 from ipc.ring_buffer import MMapRingBuffer
 from engine.matching_engine import MatchingEngine
-
+from dashboard.live_stats import publish_stats
 
 BUFFER_FILE = "chronosmatch_ring.dat"
 CAPACITY = 65536
 REPORT_INTERVAL = 10000
+WHALE_THRESHOLD = 500
+latest_whale_alert = None
 
 
 def main():
@@ -59,6 +61,13 @@ def main():
             if order is None:
                 time.sleep(0.0001)
                 continue
+            if order["quantity"] >= WHALE_THRESHOLD:
+               latest_whale_alert = (
+                     f"WHALE {order['side']} | "
+                     f"Order {order['order_id']} | "
+                     f"Qty {order['quantity']} | "
+                     f"${order['price']:.2f}"
+                )
 
             # End-to-end latency includes time spent waiting
             # inside the shared ring buffer.
@@ -125,6 +134,19 @@ def main():
                 )
 
                 stats = engine.stats()
+                publish_stats({
+                     "orders": total_orders,
+                     "trades": total_trades,
+                     "throughput": throughput,
+                     "best_bid": engine.best_bid(),
+                     "best_ask": engine.best_ask(),
+                     "bids": stats["bids"],
+                     "asks": stats["asks"],
+                     "avg_latency_us": avg_latency_us,
+                     "avg_matching_us": avg_matching_us,
+                     "saved_trades": ledger.saved_count,
+                     "whale_alert": latest_whale_alert,
+                })
 
                 print("=" * 65)
                 print("          CHRONOSMATCH LIVE STATISTICS")
@@ -198,6 +220,27 @@ def main():
         ledger.close()
         print(f"SQLite Trades Saved : {ledger.saved_count:,}")
         buffer.close()
+
+        final_stats = engine.stats()
+
+        publish_stats({
+             "orders": total_orders,
+             "trades": total_trades,
+             "throughput": 0,
+             "best_bid": engine.best_bid(),
+             "best_ask": engine.best_ask(),
+             "bids": final_stats["bids"],
+             "asks": final_stats["asks"],
+             "avg_latency_us": (
+                  total_latency_ns / total_orders / 1000
+                  if total_orders else 0
+            ),
+             "avg_matching_us": (
+                   total_matching_ns / total_orders / 1000
+                   if total_orders else 0
+            ),
+            "saved_trades": ledger.saved_count,
+        })
 
 
 if __name__ == "__main__":
