@@ -1,1 +1,0 @@
-{"orders": 20000, "trades": 15459, "throughput": 0, "best_bid": {"order_id": 19978, "price": 149.95, "quantity": 365}, "best_ask": {"order_id": 19641, "price": 150.05, "quantity": 25}, "bids": 1980, "asks": 1919, "avg_latency_us": 2086531.87737, "avg_matching_us": 5.844085, "saved_trades": 15459}

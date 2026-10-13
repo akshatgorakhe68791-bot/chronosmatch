@@ -1,3 +1,8 @@
+
+# Runtime data
+chronosmatch_ring.dat
+chronosmatch_live_benchmark.dat
+dashboard/live_stats.json
 venv/
 .venv/
 __pycache__/
@@ -16,7 +21,8 @@ dist/
 *.db
 *.sqlite
 *.sqlite3
-
+*.db-wal
+*.db-shm
 *.dat
 *.mmap
 
