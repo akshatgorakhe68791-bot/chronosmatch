@@ -28,12 +28,13 @@ def percentile(values, percent):
     )
 
 
-def producer(ready_event, start_event, results, total_orders, rate):
+def producer(ready_event, start_event, results, total_orders, rate, ring_lock):
     try:
-        with MMapRingBuffer(
+       with MMapRingBuffer(
             path=BUFFER_FILE,
             capacity=CAPACITY,
             create=False,
+            lock=ring_lock,
         ) as ring:
 
             ready_event.set()
@@ -87,12 +88,13 @@ def producer(ready_event, start_event, results, total_orders, rate):
         raise
 
 
-def consumer(ready_event, start_event, results, total_orders):
+def consumer(ready_event, start_event, results, total_orders, ring_lock):
     try:
         with MMapRingBuffer(
-            path=BUFFER_FILE,
-            capacity=CAPACITY,
-            create=False,
+             path=BUFFER_FILE,
+             capacity=CAPACITY,
+             create=False,
+             lock=ring_lock,
         ) as ring:
 
             engine = MatchingEngine()
@@ -201,6 +203,7 @@ def main():
     consumer_ready = ctx.Event()
     start_event = ctx.Event()
     results_queue = ctx.Queue()
+    ring_lock = ctx.Lock()
 
     producer_process = ctx.Process(
         target=producer,
@@ -210,6 +213,7 @@ def main():
             results_queue,
             args.orders,
             args.rate,
+            ring_lock,
         ),
     )
 
@@ -220,6 +224,7 @@ def main():
             start_event,
             results_queue,
             args.orders,
+            ring_lock,
         ),
     )
 
@@ -252,7 +257,7 @@ def main():
         collected = {}
 
         for _ in range(2):
-            result = results_queue.get(timeout=120)
+            result = results_queue.get(timeout=max(600, int(args.orders / args.rate * 3 + 120)))
             collected[result["type"]] = result
 
         producer_process.join(timeout=10)

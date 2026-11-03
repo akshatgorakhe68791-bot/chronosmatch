@@ -1,63 +1,37 @@
+
 import mmap
 import os
 import struct
 from pathlib import Path
+from contextlib import nullcontext
 
 from ipc.layout import ORDER_SIZE, pack_order, unpack_order
 
-
-# ---------------------------------------------------------
-# Ring Buffer Layout
-# ---------------------------------------------------------
-#
-# Header:
-#
-# write_index -> 8 bytes
-# read_index  -> 8 bytes
-#
-# Followed by:
-#
-# Order 0
-# Order 1
-# Order 2
-# ...
-#
-# ---------------------------------------------------------
-
-HEADER_FORMAT = "<QQ"
-HEADER_STRUCT = struct.Struct(HEADER_FORMAT)
+HEADER_STRUCT = struct.Struct("<QQ")
 HEADER_SIZE = HEADER_STRUCT.size
 
 DEFAULT_CAPACITY = 1024
 
 
 class MMapRingBuffer:
-    """
-    File-backed memory-mapped ring buffer.
-
-    Producer and consumer processes can map the same file
-    and exchange fixed-size binary order records without
-    JSON or Pickle serialization.
-    """
 
     def __init__(
         self,
         path="chronosmatch_ring.dat",
         capacity=DEFAULT_CAPACITY,
         create=False,
+        lock=None,
     ):
         self.path = Path(path)
         self.capacity = capacity
-
-        self.total_size = HEADER_SIZE + (capacity * ORDER_SIZE)
+        self.lock = lock
+        self.total_size = HEADER_SIZE + capacity * ORDER_SIZE
 
         if create:
             self._create_buffer()
 
         if not self.path.exists():
-            raise FileNotFoundError(
-                f"Ring buffer file does not exist: {self.path}"
-            )
+            raise FileNotFoundError(self.path)
 
         self.file = open(self.path, "r+b", buffering=0)
 
@@ -65,10 +39,9 @@ class MMapRingBuffer:
 
         if actual_size != self.total_size:
             self.file.close()
-
             raise ValueError(
-                "Ring buffer size does not match requested capacity. "
-                f"Expected {self.total_size} bytes, found {actual_size} bytes."
+                f"Expected {self.total_size} bytes, "
+                f"found {actual_size} bytes"
             )
 
         self.mm = mmap.mmap(
@@ -78,15 +51,8 @@ class MMapRingBuffer:
         )
 
     def _create_buffer(self):
-        """
-        Create or reset the mmap backing file.
-        """
-
         with open(self.path, "w+b") as file:
             file.truncate(self.total_size)
-
-            # Initial write_index = 0
-            # Initial read_index = 0
             file.seek(0)
             file.write(HEADER_STRUCT.pack(0, 0))
 
@@ -102,19 +68,19 @@ class MMapRingBuffer:
     def _set_read_index(self, value):
         struct.pack_into("<Q", self.mm, 8, value)
 
-
     def is_empty(self):
-        return self._get_write_index() == self._get_read_index()
+        with (self.lock if self.lock is not None else nullcontext()):
+            return self._get_write_index() == self._get_read_index()
 
     def is_full(self):
-        write_index = self._get_write_index()
-        read_index = self._get_read_index()
-        return (write_index - read_index) >= self.capacity
+        with (self.lock if self.lock is not None else nullcontext()):
+            return (
+                self._get_write_index() - self._get_read_index()
+            ) >= self.capacity
 
     def size(self):
-        write_index = self._get_write_index()
-        read_index = self._get_read_index()
-        return write_index - read_index
+        with (self.lock if self.lock is not None else nullcontext()):
+            return self._get_write_index() - self._get_read_index()
 
     def write_order(
         self,
@@ -123,53 +89,49 @@ class MMapRingBuffer:
         price,
         quantity,
         timestamp,
-):
-        write_index = self._get_write_index()
-        read_index = self._get_read_index()
+    ):
+        with (self.lock if self.lock is not None else nullcontext()):
+            write_index = self._get_write_index()
+            read_index = self._get_read_index()
 
-        if (write_index - read_index) >= self.capacity:
-           return False
+            if write_index - read_index >= self.capacity:
+                return False
 
-        slot = write_index % self.capacity
-        offset = HEADER_SIZE + (slot * ORDER_SIZE)
+            slot = write_index % self.capacity
+            offset = HEADER_SIZE + slot * ORDER_SIZE
 
-        order_data = pack_order(
-            order_id,
-            side,
-            price,
-            quantity,
-            timestamp,
-       )
+            order_data = pack_order(
+                order_id,
+                side,
+                price,
+                quantity,
+                timestamp,
+            )
 
-        self.mm[offset : offset + ORDER_SIZE] = order_data
+            self.mm[offset:offset + ORDER_SIZE] = order_data
+            self._set_write_index(write_index + 1)
 
-    # Producer owns only the write index.
-        self._set_write_index(write_index + 1)
-
-        return True
+            return True
 
     def read_order(self):
-        write_index = self._get_write_index()
-        read_index = self._get_read_index()
+        with (self.lock if self.lock is not None else nullcontext()):
+            write_index = self._get_write_index()
+            read_index = self._get_read_index()
 
-        if write_index == read_index:
-           return None
+            if write_index == read_index:
+                return None
 
-        slot = read_index % self.capacity
-        offset = HEADER_SIZE + (slot * ORDER_SIZE)
+            slot = read_index % self.capacity
+            offset = HEADER_SIZE + slot * ORDER_SIZE
 
-        order_data = self.mm[offset : offset + ORDER_SIZE]
-        order = unpack_order(order_data)
+            order_data = self.mm[offset:offset + ORDER_SIZE]
+            order = unpack_order(order_data)
 
-    # Consumer owns only the read index.
-        self._set_read_index(read_index + 1)
+            self._set_read_index(read_index + 1)
 
-        return order
+            return order
+
     def close(self):
-        """
-        Close mmap and backing file.
-        """
-
         if hasattr(self, "mm"):
             self.mm.flush()
             self.mm.close()
