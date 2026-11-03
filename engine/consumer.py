@@ -10,6 +10,7 @@ from dashboard.live_stats import publish_stats
 BUFFER_FILE = "chronosmatch_ring.dat"
 CAPACITY = 65536
 REPORT_INTERVAL = 10000
+STATS_INTERVAL_SECONDS = 1.0
 WHALE_THRESHOLD = 500
 latest_whale_alert = None
 
@@ -51,9 +52,10 @@ def main():
 
     total_matching_ns = 0
     last_trade = None
+    latest_whale_alert = None
 
     start_time = time.perf_counter()
-
+    last_publish_time = start_time
     try:
         while True:
             order = buffer.read_order()
@@ -117,7 +119,7 @@ def main():
                 for trade in trades:
                     ledger.record_trade(trade)
 
-            if total_orders % REPORT_INTERVAL == 0:
+            if time.perf_counter() - last_publish_time >= STATS_INTERVAL_SECONDS:
                 elapsed = time.perf_counter() - start_time
 
                 throughput = (
@@ -147,6 +149,7 @@ def main():
                      "saved_trades": ledger.saved_count,
                      "whale_alert": latest_whale_alert,
                 })
+                last_publish_time = time.perf_counter()
 
                 print("=" * 65)
                 print("          CHRONOSMATCH LIVE STATISTICS")
@@ -240,6 +243,7 @@ def main():
                    if total_orders else 0
             ),
             "saved_trades": ledger.saved_count,
+            "whale_alert": latest_whale_alert,
         })
 
 
