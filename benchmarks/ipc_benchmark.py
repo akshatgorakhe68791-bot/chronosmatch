@@ -11,11 +11,12 @@ CAPACITY = 65536
 BUFFER_FILE = "benchmark_ring.dat"
 
 
-def producer(start_event, result_queue):
+def producer(start_event, result_queue, ring_lock):
     with MMapRingBuffer(
         path=BUFFER_FILE,
         capacity=CAPACITY,
         create=False,
+        lock=ring_lock,
     ) as ring:
 
         start_event.wait()
@@ -35,11 +36,12 @@ def producer(start_event, result_queue):
         result_queue.put(("producer", elapsed))
 
 
-def consumer(start_event, result_queue):
+def consumer(start_event, result_queue, ring_lock):
     with MMapRingBuffer(
         path=BUFFER_FILE,
         capacity=CAPACITY,
         create=False,
+        lock=ring_lock,
     ) as ring:
 
         start_event.wait()
@@ -81,17 +83,18 @@ def main():
         pass
 
     ctx = mp.get_context("spawn")
+    ring_lock = ctx.Lock()
     start_event = ctx.Event()
     result_queue = ctx.Queue()
 
     producer_process = ctx.Process(
         target=producer,
-        args=(start_event, result_queue),
+        args=(start_event, result_queue, ring_lock),
     )
 
     consumer_process = ctx.Process(
         target=consumer,
-        args=(start_event, result_queue),
+        args=(start_event, result_queue, ring_lock),
     )
 
     consumer_process.start()
@@ -104,8 +107,8 @@ def main():
 
     results = {}
 
-    while not result_queue.empty():
-        result = result_queue.get()
+    for _ in range(2):
+        result = result_queue.get(timeout=30)
         results[result[0]] = result[1:]
 
     producer_elapsed = results["producer"][0]
