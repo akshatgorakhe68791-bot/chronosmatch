@@ -1,4 +1,9 @@
-# ChronosMatch — Zero-Copy-Inspired High-Frequency Trading Engine
+﻿![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python)
+![Cython](https://img.shields.io/badge/Cython-3.3.0-green)
+![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey?logo=windows)
+![Database](https://img.shields.io/badge/Database-SQLite-blue)
+![Project](https://img.shields.io/badge/Status-Prototype-orange)
+# ChronosMatch - Zero-Copy-Inspired High-Frequency Trading Engine
 
 ChronosMatch is an experimental, Windows-based high-frequency trading (HFT) engine prototype. It demonstrates a multi-process market-order pipeline using a memory-mapped ring buffer, a Cython-based matching engine, SQLite trade persistence, and a live terminal dashboard.
 
@@ -6,14 +11,14 @@ ChronosMatch is an experimental, Windows-based high-frequency trading (HFT) engi
 
 ## Key Features
 
-- **Cython matching engine** — native extension built from `engine/matching_engine.pyx`.
-- **Order matching** — price-time priority matching, including partial fills.
-- **Memory-mapped IPC** — producer and consumer exchange orders through `chronosmatch_ring.dat`.
-- **Separate processes** — market-order generation and order processing run independently.
-- **SQLite trade ledger** — executed trades are persisted in `storage/chronosmatch.db`.
-- **Live terminal dashboard** — displays engine statistics published through `dashboard/live_stats.json`.
-- **Performance benchmarks** — scripts for IPC and end-to-end live benchmark runs.
-- **Whale-order alert** — the consumer flags orders with quantity at or above the configured threshold.
+- **Cython matching engine** - native extension built from `engine/matching_engine.pyx`.
+- **Order matching** - price-time priority matching, including partial fills.
+- **Memory-mapped IPC** - producer and consumer exchange orders through `chronosmatch_ring.dat`.
+- **Separate processes** - market-order generation and order processing run independently.
+- **SQLite trade ledger** - executed trades are persisted in `storage/chronosmatch.db`.
+- **Live terminal dashboard** - displays engine statistics published through `dashboard/live_stats.json`.
+- **Performance benchmarks** - scripts for IPC and end-to-end live benchmark runs.
+- **Whale-order alert** - the consumer flags orders with quantity at or above the configured threshold.
 
 ## Architecture
 
@@ -59,7 +64,7 @@ flowchart LR
 - Microsoft C++ Build Tools / Visual Studio C++ compiler to build the Cython extension
 - PowerShell
 
-The project’s `requirements.txt` currently pins:
+The projectâ€™s `requirements.txt` currently pins:
 
 ```text
 Cython==3.3.0
@@ -140,7 +145,7 @@ The development test runs reported:
 
 The following results are from the recorded development benchmark runs. They are measurements from the tested machine and configuration, not guaranteed performance on other systems.
 
-### Synchronized live benchmark — 1,000,000 orders
+### Synchronized live benchmark - 1,000,000 orders
 
 Command:
 
@@ -155,19 +160,19 @@ python -m benchmarks.live_benchmark --orders 1000000 --rate 5000
 | Trades | 500,000 |
 | Producer / consumer rate | approximately 5,000 / 5,000 orders/sec |
 | Remaining buffer depth | 0 |
-| End-to-end average latency | 707.09 µs |
-| End-to-end P50 latency | 420.90 µs |
-| End-to-end P95 latency | 2,056.50 µs |
-| End-to-end P99 latency | 3,839.40 µs |
-| Cython matching average | 1.36 µs |
-| Cython matching P50 | 0.90 µs |
-| Cython matching P95 | 2.90 µs |
-| Cython matching P99 | 5.50 µs |
+| End-to-end average latency | 707.09 Âµs |
+| End-to-end P50 latency | 420.90 Âµs |
+| End-to-end P95 latency | 2,056.50 Âµs |
+| End-to-end P99 latency | 3,839.40 Âµs |
+| Cython matching average | 1.36 Âµs |
+| Cython matching P50 | 0.90 Âµs |
+| Cython matching P95 | 2.90 Âµs |
+| Cython matching P99 | 5.50 Âµs |
 | Benchmark status | PASSED |
 
 **Latency note:** End-to-end latency includes time spent waiting in the shared ring buffer. Cython matching latency measures the matching-engine call separately. These figures are not interchangeable.
 
-### IPC benchmark — 1,000,000 orders
+### IPC benchmark - 1,000,000 orders
 
 Command:
 
@@ -188,30 +193,30 @@ python -m benchmarks.ipc_benchmark
 
 ```text
 chronosmatch/
-├── benchmarks/
-│   ├── ipc_benchmark.py
-│   └── live_benchmark.py
-├── dashboard/
-│   ├── live_stats.py
-│   ├── run_dashboard.py
-│   └── terminal_dashboard.py
-├── engine/
-│   ├── consumer.py
-│   └── matching_engine.pyx
-├── ipc/
-│   ├── layout.py
-│   └── ring_buffer.py
-├── simulator/
-│   ├── market_firehose.py
-│   └── producer.py
-├── storage/
-│   └── trade_ledger.py
-├── main.py
-├── requirements.txt
-├── setup.py
-├── test_matching.py
-├── test_ring_buffer.py
-└── test_trade_ledger.py
+â”œâ”€â”€ benchmarks/
+â”‚   â”œâ”€â”€ ipc_benchmark.py
+â”‚   â””â”€â”€ live_benchmark.py
+â”œâ”€â”€ dashboard/
+â”‚   â”œâ”€â”€ live_stats.py
+â”‚   â”œâ”€â”€ run_dashboard.py
+â”‚   â””â”€â”€ terminal_dashboard.py
+â”œâ”€â”€ engine/
+â”‚   â”œâ”€â”€ consumer.py
+â”‚   â””â”€â”€ matching_engine.pyx
+â”œâ”€â”€ ipc/
+â”‚   â”œâ”€â”€ layout.py
+â”‚   â””â”€â”€ ring_buffer.py
+â”œâ”€â”€ simulator/
+â”‚   â”œâ”€â”€ market_firehose.py
+â”‚   â””â”€â”€ producer.py
+â”œâ”€â”€ storage/
+â”‚   â””â”€â”€ trade_ledger.py
+â”œâ”€â”€ main.py
+â”œâ”€â”€ requirements.txt
+â”œâ”€â”€ setup.py
+â”œâ”€â”€ test_matching.py
+â”œâ”€â”€ test_ring_buffer.py
+â””â”€â”€ test_trade_ledger.py
 ```
 
 Generated runtime files such as the ring-buffer data file, SQLite database, live-statistics JSON, and compiled build artifacts may appear when the project runs.
