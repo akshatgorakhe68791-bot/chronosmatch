@@ -1,29 +1,36 @@
 
 import argparse
-import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-
 BUFFER_FILE = Path("chronosmatch_ring.dat")
 STATS_FILE = Path("dashboard/live_stats.json")
+DONE_FILE = Path("producer_done.signal")
+LOG_DIR = Path("logs")
+
+
+def launch_process(name, command):
+    log_path = LOG_DIR / f"{name}.log"
+    log_file = open(log_path, "w", encoding="utf-8", buffering=1)
+
+    process = subprocess.Popen(
+        command,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+    )
+
+    return process, log_file
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="ChronosMatch Trading Engine Launcher"
     )
-
-    parser.add_argument(
-        "--orders", type=int, default=20000
-    )
-
-    parser.add_argument(
-        "--rate", type=int, default=5000
-    )
-
+    parser.add_argument("--orders", type=int, default=20000)
+    parser.add_argument("--rate", type=int, default=5000)
     args = parser.parse_args()
 
     if args.orders <= 0 or args.rate <= 0:
@@ -32,9 +39,12 @@ def main():
     print("=" * 60)
     print("           CHRONOSMATCH TRADING ENGINE")
     print("=" * 60)
-
     print(f"Orders : {args.orders:,}")
     print(f"Rate   : {args.rate:,} orders/sec")
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    if DONE_FILE.exists():
+       DONE_FILE.unlink()
 
     if BUFFER_FILE.exists():
         BUFFER_FILE.unlink()
@@ -43,66 +53,60 @@ def main():
         STATS_FILE.unlink()
 
     processes = []
+    log_files = []
 
     try:
-        consumer = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "engine.consumer",
-            ],
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        consumer, log_file = launch_process(
+            "consumer",
+            [sys.executable, "-u", "-m", "engine.consumer"],
         )
         processes.append(consumer)
+        log_files.append(log_file)
+        print(f"Consumer launched. PID: {consumer.pid}")
 
-        print("Consumer launched.")
-
-        # Allow the consumer to initialize.
         time.sleep(1)
 
-        producer = subprocess.Popen(
+        producer, log_file = launch_process(
+            "producer",
             [
-                sys.executable,
-                "-m",
+                sys.executable, "-u", "-m",
                 "simulator.market_firehose",
-                "--orders",
-                str(args.orders),
-                "--rate",
-                str(args.rate),
+                "--orders", str(args.orders),
+                "--rate", str(args.rate),
             ],
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
         )
         processes.append(producer)
-
-        print("Producer launched.")
+        log_files.append(log_file)
+        print(f"Producer launched. PID: {producer.pid}")
 
         time.sleep(1)
 
-        dashboard = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "dashboard.run_dashboard",
-            ],
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        dashboard, log_file = launch_process(
+            "dashboard",
+            [sys.executable, "-u", "-m", "dashboard.run_dashboard"],
         )
         processes.append(dashboard)
+        log_files.append(log_file)
+        print(f"Dashboard launched. PID: {dashboard.pid}")
 
-        print("Dashboard launched.")
-        print()
-        print("ChronosMatch is running.")
+        print("\nChronosMatch is running.")
         print("Press Ctrl+C here to stop launched processes.")
 
-        while True:
-            if producer.poll() is not None:
-                print("Producer finished.")
-                break
-
+        while producer.poll() is None:
             time.sleep(0.5)
 
-        print("Waiting for dashboard. Press Ctrl+C to stop.")
+        print(f"\nProducer finished. Exit code: {producer.returncode}")
+        print("Waiting for Consumer to drain the buffer...")
 
-        while True:
+        consumer.wait(timeout=60)
+
+        print("Consumer finished successfully.")
+        print("Consumer log: logs/consumer.log")
+
+        print("Dashboard is still running.")
+        print("Press Ctrl+C to stop Dashboard.")
+
+        while dashboard.poll() is None:
             time.sleep(1)
 
     except KeyboardInterrupt:
@@ -118,6 +122,10 @@ def main():
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
+                process.wait()
+
+        for log_file in log_files:
+            log_file.close()
 
         print("ChronosMatch stopped.")
 
