@@ -141,6 +141,29 @@ The development test runs reported:
 - Matching-engine tests: passed, including basic matching, partial fills, price priority, and time priority
 - Trade-ledger test: 1,000 trades saved successfully
 
+### Live Integration Test - 1,000 Orders
+
+Command:
+
+```powershell
+python main.py --orders 1000 --rate 2000
+```
+
+Verified results from the development environment:
+
+| Metric | Result |
+|---|---:|
+| Orders Processed | 1,000 |
+| Trades Executed | 746 |
+| SQLite Trades Saved | 746 |
+| Throughput | 104 orders/sec |
+| Average End-to-End Latency | 371,409.18 us |
+| Average Cython Matching Latency | 10.54 us |
+| Consumer Shutdown | Successful |
+| Integration Status | PASSED |
+**Validation:** All 746 executed trades were successfully persisted in SQLite. The producer completed successfully, the consumer drained the ring buffer, and the consumer shut down gracefully.
+
+
 ## Benchmarks
 
 The following results are from the recorded development benchmark runs. They are measurements from the tested machine and configuration, not guaranteed performance on other systems.
